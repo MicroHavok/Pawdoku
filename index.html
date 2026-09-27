@@ -50,6 +50,7 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .codein{width:100%;font-size:28px;text-align:center;letter-spacing:10px;padding:10px;border-radius:14px;border:2px solid var(--chip);background:var(--bg);color:var(--ink);margin-top:8px}
 .codeerr{color:#e0484f!important;font-weight:700}
 .setting .toggle[disabled]{opacity:.45}
+.btn.done{opacity:.6;cursor:default}
 .btn.secondary{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
 .btn:active{transform:scale(.97)}
 .round{width:48px;height:48px;border-radius:50%;background:var(--card);box-shadow:var(--shadow);display:grid;place-items:center;font-size:22px}
@@ -752,6 +753,11 @@ function levelSpec(L) {
     : n <= 10 ? ['medium', 'hard', 'medium', 'hard', 'expert'] : ['medium', 'hard', 'expert', 'hard', 'expert'];
   return { n, diff: cyc[L % cyc.length], seed: hash32(L * 7919 + 17) };
 }
+function untilTomorrow() {
+  const now = new Date(), t = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const m = Math.max(1, Math.ceil((t - now) / 60000)), h = Math.floor(m / 60);
+  return h ? `${h}h ${m % 60}m` : `${m}m`;
+}
 function todayKey() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
 function dailySpec() {
   const d = new Date(); const dow = d.getDay();
@@ -1071,6 +1077,7 @@ $('#btnHint').onclick = showHint;
 $('#btnReveal').onclick = revealCat;
 $('#btnRestart').onclick = async () => {
   if (!G) return; clearHint();
+  if (G.meta.type === 'daily' && G.done) return;
   const keep = settings.katie && !G.done && G.hearts > 0;
   const msg = keep ? 'Clears all Rys and X\'s. Katie Mode: your hearts stay where they are.' : 'Clears all Rys and X\'s, resets hearts and the timer. Same puzzle.';
   if (!G.done && !(await confirmBox('Restart puzzle?', msg))) return;
@@ -1111,6 +1118,8 @@ function showWin() {
   $('#winSub').textContent = `${G.meta.label} · ${G.n}×${G.n} · ${G.p.rating}`;
   $('#winStats').innerHTML = `<div><b>${fmtTime(G.elapsed)}</b><span>Time</span></div><div><b>${G.mistakes}</b><span>Mistakes</span></div><div><b>${G.hints + G.reveals}</b><span>Hints</span></div>`;
   $('#winNext').textContent = G.meta.type === 'level' ? `Level ${level}` : 'New puzzle';
+  $('#winNext').style.display = G.meta.type === 'daily' ? 'none' : '';
+  if (G.meta.type === 'daily') $('#winSub').textContent += ` · next daily in ${untilTomorrow()}`;
   show('ovWin');
   if (G.meta.type === 'level') prefetchLevel(level + 1);
 }
@@ -1169,7 +1178,7 @@ function renderSettings() {
       return `<div class="setting"><div><b>${t}</b><small>${locked ? 'Locked on by Katie Mode.' : s}</small></div><button class="toggle ${on ? 'on' : ''}" data-k="${k}" aria-label="${t}" ${locked ? 'disabled' : ''}></button></div>`;
     }).join('') +
     `<div class="setting"><div><b>Theme</b></div><div class="chips">${['auto', 'light', 'dark'].map(t => `<button class="chip ${settings.theme === t ? 'on' : ''}" data-theme-opt="${t}">${t}</button>`).join('')}</div></div>
-     <div class="setting"><div><b>Version</b><small>Rydoku v9</small></div><button class="chip" id="checkUpd">Check for update</button></div>
+     <div class="setting"><div><b>Version</b><small>Rydoku v10</small></div><button class="chip" id="checkUpd">Check for update</button></div>
      <div class="setting"><div><b>Reset level progress</b><small>Currently on level ${level}.</small></div><button class="chip" id="resetLevel">Reset</button></div>`;
   l.querySelectorAll('.toggle').forEach(b => b.onclick = async () => {
     const k = b.dataset.k;
@@ -1225,7 +1234,8 @@ function refreshHome() {
   $$('#sizeChips .chip').forEach(b => b.onclick = () => { quick.n = +b.dataset.n; store.set('quick', quick); refreshHome(); });
   $$('#diffChips .chip').forEach(b => b.onclick = () => { quick.diff = b.dataset.d; store.set('quick', quick); refreshHome(); });
   const done = store.get('dailyDone', '') === todayKey();
-  $('#btnDaily').textContent = done ? 'Daily puzzle ✓ (replay)' : 'Daily puzzle';
+  $('#btnDaily').textContent = done ? `Daily puzzle ✓ · next in ${untilTomorrow()}` : 'Daily puzzle';
+  $('#btnDaily').disabled = done; $('#btnDaily').classList.toggle('done', done);
   const savedOther = saved && !saved.done && saved.meta.type !== 'level' && !(saved.meta.type === 'daily' && saved.meta.day !== todayKey());
   const rb = $('#btnResume');
   rb.style.display = savedOther ? '' : 'none';
@@ -1270,6 +1280,7 @@ async function playLevel() {
 $('#btnContinue').onclick = playLevel;
 $('#btnQuick').onclick = () => startPuzzle({ n: quick.n, diff: quick.diff, seed: (Math.random() * 2 ** 32) >>> 0 }, { type: 'quick', label: 'Quick play' });
 $('#btnDaily').onclick = () => {
+  if (store.get('dailyDone', '') === todayKey()) return;
   const saved = store.get('game', null);
   if (saved && !saved.done && saved.meta.type === 'daily' && saved.meta.day === todayKey()) { loadGame(); openGame(); return; }
   startPuzzle(dailySpec(), { type: 'daily', day: todayKey(), label: 'Daily ' + todayKey().slice(5) });
@@ -1289,7 +1300,7 @@ function parkGame() {
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) parkGame(); else { lastTick = performance.now(); updateHintBadge(); } });
 window.addEventListener('pagehide', parkGame);
-setInterval(updateHintBadge, 60000);
+setInterval(() => { updateHintBadge(); if ($('#home').classList.contains('active')) refreshHome(); }, 60000);
 
 refreshHome();
 $('#btnResume').onclick = () => { if (loadGame()) openGame(); };
