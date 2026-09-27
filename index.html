@@ -41,6 +41,15 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .btn.update{background:#2e9e44;box-shadow:0 6px 16px rgba(46,158,68,.3);animation:pulse 1.6s ease-in-out infinite}
 @keyframes pulse{50%{transform:scale(1.03)}}
 @media (prefers-reduced-motion: reduce){.btn.update{animation:none}}
+.hintwrap{position:relative}
+.badge{position:absolute;top:-4px;right:-4px;min-width:22px;height:22px;border-radius:11px;background:#e0484f;color:#fff;font:700 13px/22px system-ui,sans-serif;font-style:normal;padding:0 5px}
+.badge.zero{background:#8a7f7c}
+.tool.dim{opacity:.5}
+.katietag{display:inline-block;margin-top:3px;background:#d94fd0;color:#fff;font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;border-radius:999px;padding:2px 9px}
+.katietag[hidden]{display:none}
+.codein{width:100%;font-size:28px;text-align:center;letter-spacing:10px;padding:10px;border-radius:14px;border:2px solid var(--chip);background:var(--bg);color:var(--ink);margin-top:8px}
+.codeerr{color:#e0484f!important;font-weight:700}
+.setting .toggle[disabled]{opacity:.45}
 .btn.secondary{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
 .btn:active{transform:scale(.97)}
 .round{width:48px;height:48px;border-radius:50%;background:var(--card);box-shadow:var(--shadow);display:grid;place-items:center;font-size:22px}
@@ -171,7 +180,7 @@ img.face{object-fit:contain;-webkit-user-drag:none}
 <section class="screen" id="game">
   <div class="topbar">
     <button class="round" id="btnBack" aria-label="Back">←</button>
-    <div class="title"><div class="lvl" id="gTitle">Level 1</div><div class="sub" id="gSub">5×5 · easy</div></div>
+    <div class="title"><div class="lvl" id="gTitle">Level 1</div><div class="sub" id="gSub">5×5 · easy</div><div class="katietag" id="katieTag" hidden>Katie Mode</div></div>
     <button class="round" id="btnGSettings" aria-label="Settings">⚙︎</button>
   </div>
   <div class="status">
@@ -186,7 +195,7 @@ img.face{object-fit:contain;-webkit-user-drag:none}
   <div class="tools">
     <button class="tool" id="btnUndo"><span class="round">↶</span>Undo</button>
     <button class="tool" id="btnClear"><span class="round">⌫</span>Clear X's</button>
-    <button class="tool" id="btnHint"><span class="round">💡</span>Hint</button>
+    <button class="tool" id="btnHint"><span class="round hintwrap">💡<i class="badge" id="hintBadge" hidden></i></span>Hint</button>
     <button class="tool" id="btnRestart"><span class="round">⟲</span>Restart</button>
     <button class="tool" id="btnReveal"><span class="round catbtn"></span>Reveal Ry</button>
   </div>
@@ -240,6 +249,13 @@ img.face{object-fit:contain;-webkit-user-drag:none}
   <h2>Settings</h2>
   <div id="settingsList"></div>
   <div class="btns"><button class="btn" data-close>Done</button></div>
+</div></div>
+
+<div class="overlay" id="ovCode"><div class="card modal">
+  <h2 style="font-size:22px">Leave Katie Mode</h2><p>Enter the husband code.</p>
+  <input id="codeInput" class="codein" type="password" inputmode="numeric" autocomplete="off" maxlength="12" aria-label="Code">
+  <p id="codeErr" class="codeerr" hidden>Nope. Nice try.</p>
+  <div class="btns"><button class="btn" id="codeOk">Unlock</button><button class="btn secondary" id="codeCancel">Cancel</button></div>
 </div></div>
 
 <div class="overlay" id="ovConfirm"><div class="card modal">
@@ -663,13 +679,37 @@ const COLOR_NAMES = ['yellow','pink','blue','purple','brown','orange','tan','lim
 const COLORS = ['#fcd21d','#d94fd0','#1f6fd6','#8a35c9','#a8807a','#ff7f00','#e0c9ab','#8fd414','#dc3a3f','#18b318','#35b5c4','#f090b4','#3d4f9e','#9c8a1e'];
 
 // ---------- settings ----------
-const DEF_SETTINGS = { hearts: true, autoX: true, uniformX: false, conflicts: true, haptics: true, theme: 'auto' };
+const DEF_SETTINGS = { katie: false, hearts: true, autoX: true, uniformX: false, conflicts: true, haptics: true, theme: 'auto' };
 let settings = Object.assign({}, DEF_SETTINGS, store.get('settings', {}));
 function applyTheme() {
   if (settings.theme === 'auto') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', settings.theme);
 }
 applyTheme();
+// ---------- Katie Mode ----------
+const KATIE_MAX_HINTS = 2, HINT_REGEN_MS = 60 * 60 * 1000, KATIE_KEY = 221296223;
+function codeOk(v) { let h = 0x811c9dc5; for (const c of 'rydoku:' + String(v).trim()) { h ^= c.charCodeAt(0); h = Math.imul(h, 0x01000193) >>> 0; } return h === KATIE_KEY; }
+function katieHints() {
+  // returns current hint count, applying time-based regeneration (+1 per hour, max 2)
+  const k = store.get('katieHints', { n: KATIE_MAX_HINTS, t: Date.now() });
+  const now = Date.now();
+  if (k.n >= KATIE_MAX_HINTS) { k.n = KATIE_MAX_HINTS; k.t = now; }
+  else { const gained = Math.floor((now - k.t) / HINT_REGEN_MS); if (gained > 0) { k.n = Math.min(KATIE_MAX_HINTS, k.n + gained); k.t = k.n >= KATIE_MAX_HINTS ? now : k.t + gained * HINT_REGEN_MS; } }
+  store.set('katieHints', k); return k;
+}
+function katieSpend() { const k = katieHints(); if (k.n >= KATIE_MAX_HINTS) k.t = Date.now(); k.n = Math.max(0, k.n - 1); store.set('katieHints', k); updateHintBadge(); }
+function katieEarn() { const k = katieHints(); if (k.n < KATIE_MAX_HINTS) { k.n++; if (k.n >= KATIE_MAX_HINTS) k.t = Date.now(); store.set('katieHints', k); } updateHintBadge(); }
+function nextHintIn() { const k = katieHints(); return Math.max(1, Math.ceil((k.t + HINT_REGEN_MS - Date.now()) / 60000)); }
+function updateHintBadge() {
+  const b = $('#hintBadge'); if (!b) return;
+  if (!settings.katie) { b.hidden = true; $('#btnHint').classList.remove('dim'); return; }
+  const n = katieHints().n; b.hidden = false; b.textContent = n; b.classList.toggle('zero', n === 0); $('#btnHint').classList.toggle('dim', n === 0);
+}
+function applyKatieUI() {
+  $('#btnReveal').style.display = settings.katie ? 'none' : '';
+  $('#katieTag').hidden = !settings.katie;
+  updateHintBadge();
+}
 function buzz(ms) { if (settings.haptics && navigator.vibrate) try { navigator.vibrate(ms); } catch {} }
 
 // ---------- generator workers (foreground + background) ----------
@@ -730,7 +770,7 @@ function newGame(p, meta) {
   G = {
     p, meta, n: p.n, N,
     marks: new Uint8Array(N), wrong: new Uint8Array(N),
-    hearts: settings.hearts ? 3 : 0, heartsMode: settings.hearts,
+    hearts: (settings.hearts || settings.katie) ? 3 : 0, heartsMode: settings.hearts || settings.katie,
     hints: 0, reveals: 0, mistakes: 0, elapsed: 0, done: false, undo: [],
   };
   G.ctx = E.makeCtx(p.n, Int8Array.from(p.reg));
@@ -833,7 +873,7 @@ function render() {
   const h = $('#hearts');
   if (G.heartsMode) { h.style.display = ''; h.innerHTML = [0, 1, 2].map(k => `<span class="${k < G.hearts ? '' : 'lost'}">❤️</span>`).join(''); }
   else h.style.display = 'none';
-  $('#btnReveal').style.display = '';
+  applyKatieUI();
 }
 function flash(i, cls) { const el = cellEls[i]; el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); setTimeout(() => el.classList.remove(cls), 450); }
 function fmtTime(s) { s = Math.floor(s); const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); }
@@ -844,7 +884,8 @@ function startTimer() {
   stopTimer(); lastTick = performance.now();
   tickHandle = setInterval(() => {
     if (!G || G.done || document.hidden || $('.overlay.show')) { lastTick = performance.now(); return; }
-    const now = performance.now(); G.elapsed += (now - lastTick) / 1000; lastTick = now;
+    const now = performance.now(), dt = now - lastTick; lastTick = now;
+    if (dt > 0 && dt < 2000) G.elapsed += dt / 1000; // ignore gaps (app suspended / frozen) so away time never counts
     $('#timer').textContent = fmtTime(G.elapsed);
     if (Math.floor(G.elapsed) % 5 === 0) saveGame();
   }, 250);
@@ -860,6 +901,7 @@ function setMark(i, v) {
 }
 function placeCat(i) {
   if (G.done || G.marks[i] === 2 || G.wrong[i]) return;
+  if (G.heartsMode && G.hearts <= 0) { show('ovLose'); return; }
   clearHint();
   const [r, c] = rc(i);
   // Both modes: correct cats lock in, wrong cats become a red X. Hearts mode also costs a heart.
@@ -868,7 +910,7 @@ function placeCat(i) {
     pushUndo(); G.marks[i] = 1; G.wrong[i] = 1; G.mistakes++;
     if (G.heartsMode) G.hearts--;
     render(); flash(i, 'shake'); buzz([60, 40, 60]);
-    if (G.heartsMode && G.hearts <= 0) { saveGame(); const r = speedRatio(); $('#loseQuip').textContent = pickQuip(r < 0.25 ? 'failFast' : r > 1.5 ? 'failSlow' : 'fail'); setTimeout(() => show('ovLose'), 500); return; }
+    if (G.heartsMode && G.hearts <= 0) { saveGame(); const r = speedRatio(); $('#loseQuip').textContent = pickQuip(r < 0.25 ? 'failFast' : r > 1.5 ? 'failSlow' : 'fail'); $('#loseContinue').style.display = settings.katie ? 'none' : ''; setTimeout(() => show('ovLose'), 500); return; }
   }
   afterChange();
 }
@@ -972,9 +1014,17 @@ function buildSolverState() {
 }
 function showHint() {
   if (!G || G.done) return;
+  if (settings.katie && katieHints().n <= 0 && !(G.lastHint && G.lastHint.sig === G.marks.join('') + '|' + G.wrong.join(''))) {
+    const m = nextHintIn();
+    setHint({ cells: [], unitCells: [], text: `No hints left. Next one in ${m} min, or win a puzzle to earn one back.`, apply: null }); return;
+  }
+  // Same board as the last paid hint? Show it again for free.
+  const sig = G.marks.join('') + '|' + G.wrong.join('');
+  if (G.lastHint && G.lastHint.sig === sig) { setHint(G.lastHint.h); return; }
+  const give = h => { if (settings.katie) katieSpend(); G.lastHint = { sig, h }; setHint(h); };
   const b = buildSolverState();
-  if (b.badCat != null) { setHint({ cells: [b.badCat], unitCells: [], text: 'This Ry breaks the solution — it can\'t stay here. Remove it (tap it) to continue.', apply: () => { pushUndo(); G.marks[b.badCat] = 0; } }); return; }
-  if (b.badX != null) { setHint({ cells: [b.badX], unitCells: [], text: 'This X is covering a spot that actually needs a Ry. Clear it.', apply: () => { pushUndo(); G.marks[b.badX] = 0; } }); return; }
+  if (b.badCat != null) { give({ cells: [b.badCat], unitCells: [], text: 'This Ry breaks the solution — it can\'t stay here. Remove it (tap it) to continue.', apply: () => { pushUndo(); G.marks[b.badCat] = 0; } }); return; }
+  if (b.badX != null) { give({ cells: [b.badX], unitCells: [], text: 'This X is covering a spot that actually needs a Ry. Clear it.', apply: () => { pushUndo(); G.marks[b.badX] = 0; } }); return; }
   const s = b.state;
   let st = E.findStep(G.ctx, s, 4);
   // Skip steps that only eliminate cells already shown as auto-X
@@ -983,7 +1033,7 @@ function showHint() {
   while (st && !st.contradiction && st.type === 'elim' && st.cells.every(c => auto[c] || G.marks[c] === 1) && guard++ < 200) {
     E.apply(G.ctx, s, st); st = E.findStep(G.ctx, s, 4);
   }
-  if (!st || st.contradiction) { setHint({ cells: [], unitCells: [], text: 'No further logical step found from here — try Reveal Ry.', apply: null }); return; }
+  if (!st || st.contradiction) { setHint({ cells: [], unitCells: [], text: settings.katie ? 'No further logical step found from here.' : 'No further logical step found from here — try Reveal Ry.', apply: null }); return; }
   G.hints++;
   const u = unitName(st.unit);
   let text, unitCells = u.cells.slice();
@@ -1001,10 +1051,10 @@ function showHint() {
     text = `If a Ry went in the highlighted cell, following the forced moves would leave some row, column or color with nowhere for its Ry. So it's an X.`;
   }
   const cells = st.cells.slice();
-  setHint({ cells, unitCells, text, apply: () => { pushUndo(); if (st.type === 'place') G.marks[cells[0]] = 2; else for (const c of cells) if (G.marks[c] === 0) G.marks[c] = 1; } });
+  give({ cells, unitCells, text, apply: () => { pushUndo(); if (st.type === 'place') G.marks[cells[0]] = 2; else for (const c of cells) if (G.marks[c] === 0) G.marks[c] = 1; } });
 }
 function revealCat() {
-  if (!G || G.done) return;
+  if (!G || G.done || settings.katie) return;
   clearHint();
   const free = []; for (let r = 0; r < G.n; r++) { const i = r * G.n + G.p.sol[r]; if (G.marks[i] !== 2) free.push(i); }
   if (!free.length) return;
@@ -1021,8 +1071,13 @@ $('#btnHint').onclick = showHint;
 $('#btnReveal').onclick = revealCat;
 $('#btnRestart').onclick = async () => {
   if (!G) return; clearHint();
-  if (!G.done && !(await confirmBox('Restart puzzle?', 'Clears all Rys and X\'s, resets hearts and the timer. Same puzzle.'))) return;
-  hide('ovWin'); newGame(G.p, G.meta); openGame();
+  const keep = settings.katie && !G.done && G.hearts > 0;
+  const msg = keep ? 'Clears all Rys and X\'s. Katie Mode: your hearts stay where they are.' : 'Clears all Rys and X\'s, resets hearts and the timer. Same puzzle.';
+  if (!G.done && !(await confirmBox('Restart puzzle?', msg))) return;
+  const h = G.hearts, mk = G.mistakes, el = G.elapsed;
+  hide('ovWin'); newGame(G.p, G.meta);
+  if (keep) { G.hearts = h; G.mistakes = mk; G.elapsed = el; saveGame(); }
+  openGame();
 };
 $('#btnUndo').onclick = () => { if (!G || G.done || !G.undo.length) return; clearHint(); const u = G.undo.pop(); G.marks = u.marks; G.wrong = u.wrong; lastTap = null; afterChange(); };
 $('#btnClear').onclick = () => {
@@ -1034,6 +1089,7 @@ $('#btnClear').onclick = () => {
 
 // ---------- stats ----------
 function recordWin() {
+  if (settings.katie) katieEarn();
   const st = store.get('stats', { solved: 0, bySize: {}, streakDays: [], perfect: 0 });
   st.solved++;
   if (!G.mistakes && !G.hints && !G.reveals) st.perfect++;
@@ -1070,6 +1126,16 @@ function showStats() {
 function show(id) { $('#' + id).classList.add('show'); }
 function hide(id) { $('#' + id).classList.remove('show'); }
 $$('[data-close]').forEach(b => b.onclick = () => b.closest('.overlay').classList.remove('show'));
+function askCode() {
+  return new Promise(res => {
+    const inp = $('#codeInput'); inp.value = ''; $('#codeErr').hidden = true; show('ovCode'); setTimeout(() => inp.focus(), 50);
+    const done = v => { hide('ovCode'); $('#codeOk').onclick = $('#codeCancel').onclick = inp.onkeydown = null; res(v); };
+    const tryIt = () => { if (codeOk(inp.value)) done(true); else { $('#codeErr').hidden = false; inp.value = ''; buzz([60, 40, 60]); } };
+    $('#codeOk').onclick = tryIt;
+    $('#codeCancel').onclick = () => done(false);
+    inp.onkeydown = e => { if (e.key === 'Enter') tryIt(); };
+  });
+}
 function confirmBox(title, text) {
   return new Promise(res => {
     $('#cfTitle').textContent = title; $('#cfText').textContent = text; show('ovConfirm');
@@ -1089,6 +1155,7 @@ function confetti() {
 
 // ---------- settings UI ----------
 const SETTING_DEFS = [
+  ['katie', 'Katie Mode', 'Hearts always on, no relaxed mode, no Reveal, 2 hints that refill one per hour or one per win. Leaving requires the husband code.'],
   ['hearts', 'Hearts', 'A wrong Ry costs a heart; 3 mistakes ends the game. Off = relaxed: wrong Rys still turn into red X\'s, but no hearts are lost.'],
   ['autoX', 'Auto-X', 'Automatically shade cells ruled out by placed Rys.'],
   ['uniformX', 'Uniform X\'s', 'Accessibility: show automatic X\'s at full brightness, same as X\'s you place.'],
@@ -1096,12 +1163,35 @@ const SETTING_DEFS = [
 ];
 function renderSettings() {
   const l = $('#settingsList');
-  l.innerHTML = SETTING_DEFS.map(([k, t, s]) => `<div class="setting"><div><b>${t}</b><small>${s}</small></div><button class="toggle ${settings[k] ? 'on' : ''}" data-k="${k}" aria-label="${t}"></button></div>`).join('') +
+  l.innerHTML = SETTING_DEFS.map(([k, t, s]) => {
+      const locked = settings.katie && k === 'hearts';
+      const on = locked ? true : settings[k];
+      return `<div class="setting"><div><b>${t}</b><small>${locked ? 'Locked on by Katie Mode.' : s}</small></div><button class="toggle ${on ? 'on' : ''}" data-k="${k}" aria-label="${t}" ${locked ? 'disabled' : ''}></button></div>`;
+    }).join('') +
     `<div class="setting"><div><b>Theme</b></div><div class="chips">${['auto', 'light', 'dark'].map(t => `<button class="chip ${settings.theme === t ? 'on' : ''}" data-theme-opt="${t}">${t}</button>`).join('')}</div></div>
-     <div class="setting"><div><b>Version</b><small>Rydoku v6</small></div><button class="chip" id="checkUpd">Check for update</button></div>
+     <div class="setting"><div><b>Version</b><small>Rydoku v9</small></div><button class="chip" id="checkUpd">Check for update</button></div>
      <div class="setting"><div><b>Reset level progress</b><small>Currently on level ${level}.</small></div><button class="chip" id="resetLevel">Reset</button></div>`;
-  l.querySelectorAll('.toggle').forEach(b => b.onclick = () => {
-    const k = b.dataset.k; settings[k] = !settings[k]; store.set('settings', settings); renderSettings();
+  l.querySelectorAll('.toggle').forEach(b => b.onclick = async () => {
+    const k = b.dataset.k;
+    if (b.disabled) return;
+    if (k === 'katie') {
+      if (!settings.katie) {
+        hide('ovSettings');
+        const ok = await confirmBox('Turn on Katie Mode?', 'Heads up: once it\'s on, you cannot exit Katie Mode without the husband code. No relaxed mode, no Reveal, and only 2 hints that refill one per hour or one per win.');
+        show('ovSettings');
+        if (!ok) return;
+        settings.katie = true; store.set('settings', settings);
+        if (G && !G.done && !G.heartsMode) { G.heartsMode = true; G.hearts = 3; saveGame(); }
+      } else {
+        hide('ovSettings');
+        const ok = await askCode();
+        show('ovSettings');
+        if (!ok) return;
+        settings.katie = false; store.set('settings', settings);
+      }
+      renderSettings(); applyKatieUI(); if (G) render(); return;
+    }
+    settings[k] = !settings[k]; store.set('settings', settings); renderSettings();
     if (k === 'hearts' && G && !G.done) { /* applies to next puzzle */ }
     render();
   });
@@ -1155,11 +1245,13 @@ async function startPuzzle(spec, meta) {
   openGame();
 }
 function openGame() {
+  applyKatieUI();
   hintState = null; $('#hintbox').classList.remove('show');
   $('#gTitle').textContent = G.meta.label;
   $('#gSub').textContent = `${G.n}×${G.n} · ${G.p.rating}`;
   $('#timer').textContent = fmtTime(G.elapsed);
   goto('game'); buildBoard(); startTimer();
+  if (G.heartsMode && G.hearts <= 0 && !G.done) { $('#loseQuip').textContent = pickQuip('fail'); $('#loseContinue').style.display = settings.katie ? 'none' : ''; show('ovLose'); }
   if (G.meta.type === 'level') prefetchLevel(G.meta.level + 1);
 }
 const prefetched = {};
@@ -1186,10 +1278,18 @@ $('#btnBack').onclick = () => { saveGame(); stopTimer(); clearHint(); goto('home
 $('#winNext').onclick = () => { hide('ovWin'); if (G.meta.type === 'level') playLevel(); else if (G.meta.type === 'daily') { goto('home'); refreshHome(); } else $('#btnQuick').onclick(); };
 $('#winHome').onclick = () => { hide('ovWin'); goto('home'); refreshHome(); };
 $('#loseRetry').onclick = () => { hide('ovLose'); const p = G.p, meta = G.meta; newGame(p, meta); openGame(); };
-$('#loseContinue').onclick = () => { hide('ovLose'); G.heartsMode = false; G.hearts = 0; afterChange(); };
+$('#loseContinue').onclick = () => { if (settings.katie) return; hide('ovLose'); G.heartsMode = false; G.hearts = 0; afterChange(); };
 $('#loseHome').onclick = () => { hide('ovLose'); store.del('game'); goto('home'); refreshHome(); };
 window.addEventListener('resize', () => { if (G && $('#game').classList.contains('active')) buildBoard(); });
-document.addEventListener('visibilitychange', () => { if (document.hidden) saveGame(); });
+// Leaving the app mid-puzzle: save, stop the clock and park on the home screen (Resume is offered there).
+function parkGame() {
+  if (!$('#game').classList.contains('active')) return;
+  saveGame(); stopTimer(); clearHint();
+  if (G && !G.done && !$('.overlay.show')) { goto('home'); refreshHome(); }
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) parkGame(); else { lastTick = performance.now(); updateHintBadge(); } });
+window.addEventListener('pagehide', parkGame);
+setInterval(updateHintBadge, 60000);
 
 refreshHome();
 $('#btnResume').onclick = () => { if (loadGame()) openGame(); };
