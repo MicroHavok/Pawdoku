@@ -1,7 +1,7 @@
 {
-  "name": "Pawdoku",
-  "short_name": "Pawdoku",
-  "description": "Place one cat per row, column and color. No two cats may touch.",
+  "name": "Rydoku",
+  "short_name": "Rydoku",
+  "description": "Place one Ry per row, column and color. No two Rys may touch.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
