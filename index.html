@@ -651,6 +651,7 @@ function pickQuip(bucket) {
 function speedRatio() { return G.elapsed / (G.N * (SEC_PER_CELL[G.p.rating] || 2.5)); }
 $('#loseImg').src = IMG_FAIL;
 
+const WXSVG = `<svg viewBox="0 0 100 100" class="wx"><circle cx="50" cy="50" r="44" fill="#1b1a20" fill-opacity=".78"/><g stroke-linecap="round"><line x1="30" y1="30" x2="70" y2="70" stroke="#fff" stroke-width="20"/><line x1="70" y1="30" x2="30" y2="70" stroke="#fff" stroke-width="20"/><line x1="30" y1="30" x2="70" y2="70" stroke="#ff3b47" stroke-width="12"/><line x1="70" y1="30" x2="30" y2="70" stroke="#ff3b47" stroke-width="12"/></g></svg>`;
 const XSVG = `<svg viewBox="0 0 100 100" class="x"><line x1="24" y1="24" x2="76" y2="76"/><line x1="76" y1="24" x2="24" y2="76"/></svg>`;
 const CATSVG = `<img src="${FACE}" class="face" alt="" draggable="false">`;
 $('#logoCat').src = FACE;
@@ -804,7 +805,7 @@ function render() {
     const el = cellEls[i], m = G.marks[i];
     let html = '', cls = 'cell';
     if (m === 2) html = CATSVG;
-    else if (m === 1) { html = XSVG; if (G.wrong[i]) cls += ' wrong'; }
+    else if (m === 1) { html = G.wrong[i] ? WXSVG : XSVG; if (G.wrong[i]) cls += ' wrong'; }
     else if (auto[i]) { html = XSVG; cls += ' auto'; }
     if (m === 2 && conf[i]) cls += ' conflict';
     if (hintState && hintState.cells.includes(i)) cls += ' hl';
@@ -1097,7 +1098,7 @@ function renderSettings() {
   const l = $('#settingsList');
   l.innerHTML = SETTING_DEFS.map(([k, t, s]) => `<div class="setting"><div><b>${t}</b><small>${s}</small></div><button class="toggle ${settings[k] ? 'on' : ''}" data-k="${k}" aria-label="${t}"></button></div>`).join('') +
     `<div class="setting"><div><b>Theme</b></div><div class="chips">${['auto', 'light', 'dark'].map(t => `<button class="chip ${settings.theme === t ? 'on' : ''}" data-theme-opt="${t}">${t}</button>`).join('')}</div></div>
-     <div class="setting"><div><b>Version</b><small>Rydoku v5</small></div><button class="chip" id="checkUpd">Check for update</button></div>
+     <div class="setting"><div><b>Version</b><small>Rydoku v6</small></div><button class="chip" id="checkUpd">Check for update</button></div>
      <div class="setting"><div><b>Reset level progress</b><small>Currently on level ${level}.</small></div><button class="chip" id="resetLevel">Reset</button></div>`;
   l.querySelectorAll('.toggle').forEach(b => b.onclick = () => {
     const k = b.dataset.k; settings[k] = !settings[k]; store.set('settings', settings); renderSettings();
