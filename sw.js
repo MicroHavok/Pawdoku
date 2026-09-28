@@ -1,8 +1,8 @@
-// Rydoku service worker v10
+// Rydoku service worker v13
 // Cache first for everything: the app always opens instantly from the phone, online or not.
 // A new version downloads in the background (fresh copies, bypassing the browser HTTP cache) and WAITS.
 // The page shows a "Refresh for update" button; tapping it activates the new version and deletes old caches.
-const CACHE = 'rydoku-cache-v10';
+const CACHE = 'rydoku-cache-v13';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png'];
 self.addEventListener('install', e => {
   e.waitUntil((async () => {

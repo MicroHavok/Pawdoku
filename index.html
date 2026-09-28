@@ -47,10 +47,16 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .tool.dim{opacity:.5}
 .katietag{display:inline-block;margin-top:3px;background:#d94fd0;color:#fff;font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;border-radius:999px;padding:2px 9px}
 .katietag[hidden]{display:none}
+.ghosttag{background:#5b6275}
 .codein{width:100%;font-size:28px;text-align:center;letter-spacing:10px;padding:10px;border-radius:14px;border:2px solid var(--chip);background:var(--bg);color:var(--ink);margin-top:8px}
 .codeerr{color:#e0484f!important;font-weight:700}
 .setting .toggle[disabled]{opacity:.45}
 .btn.done{opacity:.6;cursor:default}
+.stathead{margin:18px 0 0;font-size:17px}
+.newlist{text-align:left;margin-top:8px}
+.newlist h4{margin:12px 0 4px;font-size:14px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.6px}
+.newlist ul{margin:0;padding-left:20px}
+.newlist li{margin:4px 0;line-height:1.35}
 .btn.secondary{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
 .btn:active{transform:scale(.97)}
 .round{width:48px;height:48px;border-radius:50%;background:var(--card);box-shadow:var(--shadow);display:grid;place-items:center;font-size:22px}
@@ -181,7 +187,7 @@ img.face{object-fit:contain;-webkit-user-drag:none}
 <section class="screen" id="game">
   <div class="topbar">
     <button class="round" id="btnBack" aria-label="Back">←</button>
-    <div class="title"><div class="lvl" id="gTitle">Level 1</div><div class="sub" id="gSub">5×5 · easy</div><div class="katietag" id="katieTag" hidden>Katie Mode</div></div>
+    <div class="title"><div class="lvl" id="gTitle">Level 1</div><div class="sub" id="gSub">5×5 · easy</div><div class="katietag" id="katieTag" hidden>Katie Mode</div> <div class="katietag ghosttag" id="ghostTag" hidden>Ghost Mode</div></div>
     <button class="round" id="btnGSettings" aria-label="Settings">⚙︎</button>
   </div>
   <div class="status">
@@ -235,6 +241,8 @@ img.face{object-fit:contain;-webkit-user-drag:none}
     <li><b>Double-tap</b> (or long-press) to place a Ry.</li>
     <li><b>Hint</b> explains the next logical deduction and highlights it.</li>
   </ul>
+  <p><b>Hearts</b>: a wrong Ry turns into a red X and costs a heart. Lose all 3 and the puzzle is over (Try again replays it).</p>
+  <p><b>Modes</b>: Levels get bigger and harder as you go. Quick play lets you pick size and difficulty. The Daily puzzle is the same for everyone and can be solved once per day. Katie Mode (Settings) is the strict version: no relaxed play, no Reveal, only 2 hints that refill over time.</p>
   <p>Every puzzle is machine-checked to have exactly one solution that can be reached by logic alone — no guessing needed.</p>
   <div class="btns"><button class="btn" data-close>Got it!</button></div>
 </div></div>
@@ -243,6 +251,9 @@ img.face{object-fit:contain;-webkit-user-drag:none}
   <h2>Stats</h2>
   <div class="stats" id="statsTop"></div>
   <table class="table" id="statsTable"></table>
+  <h3 class="stathead">👻 Ghost Mode</h3>
+  <div class="stats" id="ghostTop"></div>
+  <table class="table" id="ghostTable"></table>
   <div class="btns"><button class="btn" data-close>Close</button><button class="btn secondary" id="btnResetStats">Reset stats</button></div>
 </div></div>
 
@@ -250,6 +261,21 @@ img.face{object-fit:contain;-webkit-user-drag:none}
   <h2>Settings</h2>
   <div id="settingsList"></div>
   <div class="btns"><button class="btn" data-close>Done</button></div>
+</div></div>
+
+<div class="overlay" id="ovGhost"><div class="card modal">
+  <img class="loseimg" id="ghostImg" alt="Unimpressed Ry">
+  <h2 style="font-size:24px">Not quite</h2>
+  <p class="quip" id="ghostSub"></p>
+  <p>Something on the board breaks a rule. Ghost Mode won't say what.</p>
+  <div class="btns"><button class="btn" data-close>Keep looking</button></div>
+</div></div>
+
+<div class="overlay" id="ovNew"><div class="card modal">
+  <img class="catmini face" alt="" style="width:72px;height:72px">
+  <h2 style="font-size:24px">What's new</h2>
+  <div id="newList" class="newlist"></div>
+  <div class="btns"><button class="btn" data-close>Got it</button></div>
 </div></div>
 
 <div class="overlay" id="ovCode"><div class="card modal">
@@ -532,13 +558,14 @@ const PawEngine = (() => {
   function hardness(g) { return g.maxL * 1000 + g.counts[4] * 60 + g.counts[3] * 15 + g.counts[2] * 2; }
 
   // Local search: move border cells between regions, keeping uniqueness + logic-solvability + min region size, climbing difficulty.
-  function harden(n, p, target, rnd, deadline) {
+  function harden(n, p, target, rnd, deadline, maxSteps = Infinity) {
+    let steps = 0;
     const sp = spec(n, target);
     let reg = Int8Array.from(p.reg), g = p.grade;
     const size = regionSizes(n, reg);
     const isCat = i => p.sol[(i / n) | 0] === i % n;
     const done = () => sp.test(g) && Math.min(...size) >= sp.minReg;
-    while (Date.now() < deadline && !done()) {
+    while ((maxSteps === Infinity ? Date.now() < deadline : steps < maxSteps) && !done()) {
       if (target === 'hard' && g.counts[4] >= expertC4(n) && Math.min(...size) >= sp.minReg) break;
       const i = Math.floor(rnd() * n * n); if (isCat(i)) continue;
       const nbs = nb4(i, n).filter(j => reg[j] !== reg[i]); if (!nbs.length) continue;
@@ -548,7 +575,7 @@ const PawEngine = (() => {
       if (size[from] <= sp.minReg) continue;
       if (!connectedWithout(n, reg, from, i)) continue;
       const helpsSize = size[to] < sp.minReg;
-      reg[i] = to;
+      reg[i] = to; steps++;
       const sols = solveAll(n, reg, 2);
       let ok = sols.length === 1, ng = null;
       if (ok) { ng = grade(makeCtx(n, reg)); ok = ng.solved && (helpsSize || hardness(ng) >= hardness(g)); }
@@ -559,12 +586,18 @@ const PawEngine = (() => {
 
   // Generate a unique, logic-solvable puzzle for size n / difficulty. Deterministic per seed (budget aside).
   // budgetMs caps search time; if no exact difficulty match is found, returns the closest valid puzzle.
-  function generate(n, diff = 'medium', seed = (Math.random() * 2 ** 32) >>> 0, budgetMs = 8000) {
+  // budget: a number = time limit in ms (fast, but result can vary with device speed);
+  // or { attempts, steps } = fixed amount of work, so the same seed gives the same puzzle on every device.
+  function generate(n, diff = 'medium', seed = (Math.random() * 2 ** 32) >>> 0, budget = 8000) {
+    const det = typeof budget === 'object', budgetMs = det ? Infinity : budget;
     const sp = spec(n, diff), rnd = mulberry32(seed), t0 = Date.now(), deadline = t0 + budgetMs;
     let best = null, bestD = 99;
     for (let a = 0; a < 2000; a++) {
-      if (best && Date.now() > t0 + budgetMs * 0.4) break;
-      if (Date.now() > t0 + budgetMs * 1.5 && a > 0) break;
+      if (det) { if (best && a >= budget.attempts) break; if (a >= budget.attempts * 4) break; }
+      else {
+        if (best && Date.now() > t0 + budgetMs * 0.4) break;
+        if (Date.now() > t0 + budgetMs * 1.5 && a > 0) break;
+      }
       const p = makeUnique(n, rnd, sp.minReg); if (!p) continue;
       const g = grade(makeCtx(n, p.reg));
       if (!g.solved) continue;
@@ -574,7 +607,7 @@ const PawEngine = (() => {
       const d = Math.abs(score(g, n) - RANK[diff]) + (mr < sp.minReg ? 10 : 0);
       if (d < bestD || (d === bestD && hardness(g) > hardness(best.grade))) { bestD = d; best = out; }
     }
-    if (best && (RANK[diff] > score(best.grade, n) || minRegion(n, best.reg) < sp.minReg || !sp.test(best.grade))) best = harden(n, best, diff, rnd, deadline);
+    if (best && (RANK[diff] > score(best.grade, n) || minRegion(n, best.reg) < sp.minReg || !sp.test(best.grade))) best = harden(n, best, diff, rnd, deadline, det ? budget.steps : Infinity);
     return best;
   }
   function ratingOf(g, n) { const k = score(g, n); return k <= 2 ? 'easy' : k === 3 ? 'medium' : k === 4 ? 'hard' : 'expert'; }
@@ -667,6 +700,7 @@ function pickQuip(bucket) {
 }
 function speedRatio() { return G.elapsed / (G.N * (SEC_PER_CELL[G.p.rating] || 2.5)); }
 $('#loseImg').src = IMG_FAIL;
+$('#ghostImg').src = IMG_FAIL;
 
 const WXSVG = `<svg viewBox="0 0 100 100" class="wx"><circle cx="50" cy="50" r="44" fill="#1b1a20" fill-opacity=".78"/><g stroke-linecap="round"><line x1="30" y1="30" x2="70" y2="70" stroke="#fff" stroke-width="20"/><line x1="70" y1="30" x2="30" y2="70" stroke="#fff" stroke-width="20"/><line x1="30" y1="30" x2="70" y2="70" stroke="#ff3b47" stroke-width="12"/><line x1="70" y1="30" x2="30" y2="70" stroke="#ff3b47" stroke-width="12"/></g></svg>`;
 const XSVG = `<svg viewBox="0 0 100 100" class="x"><line x1="24" y1="24" x2="76" y2="76"/><line x1="76" y1="24" x2="24" y2="76"/></svg>`;
@@ -680,7 +714,7 @@ const COLOR_NAMES = ['yellow','pink','blue','purple','brown','orange','tan','lim
 const COLORS = ['#fcd21d','#d94fd0','#1f6fd6','#8a35c9','#a8807a','#ff7f00','#e0c9ab','#8fd414','#dc3a3f','#18b318','#35b5c4','#f090b4','#3d4f9e','#9c8a1e'];
 
 // ---------- settings ----------
-const DEF_SETTINGS = { katie: false, hearts: true, autoX: true, uniformX: false, conflicts: true, haptics: true, theme: 'auto' };
+const DEF_SETTINGS = { ghost: false, katie: false, hearts: true, autoX: true, uniformX: false, conflicts: true, haptics: true, theme: 'auto' };
 let settings = Object.assign({}, DEF_SETTINGS, store.get('settings', {}));
 function applyTheme() {
   if (settings.theme === 'auto') document.documentElement.removeAttribute('data-theme');
@@ -703,12 +737,13 @@ function katieEarn() { const k = katieHints(); if (k.n < KATIE_MAX_HINTS) { k.n+
 function nextHintIn() { const k = katieHints(); return Math.max(1, Math.ceil((k.t + HINT_REGEN_MS - Date.now()) / 60000)); }
 function updateHintBadge() {
   const b = $('#hintBadge'); if (!b) return;
-  if (!settings.katie) { b.hidden = true; $('#btnHint').classList.remove('dim'); return; }
+  if (!limitedHints()) { b.hidden = true; $('#btnHint').classList.remove('dim'); return; }
   const n = katieHints().n; b.hidden = false; b.textContent = n; b.classList.toggle('zero', n === 0); $('#btnHint').classList.toggle('dim', n === 0);
 }
 function applyKatieUI() {
-  $('#btnReveal').style.display = settings.katie ? 'none' : '';
-  $('#katieTag').hidden = !settings.katie;
+  $('#btnReveal').style.display = limitedHints() ? 'none' : '';
+  $('#katieTag').hidden = !settings.katie || !!(G && G.ghost);
+  $('#ghostTag').hidden = !(G && G.ghost);
   updateHintBadge();
 }
 function buzz(ms) { if (settings.haptics && navigator.vibrate) try { navigator.vibrate(ms); } catch {} }
@@ -730,10 +765,13 @@ for (const [lane, w] of Object.entries(workers)) if (w) {
 }
 const inflight = new Map();
 function budgetFor(n) { return n <= 8 ? 2500 : n <= 10 ? 4000 : n <= 12 ? 6000 : 9000; }
-function genPuzzle(n, diff, seed, lane = 'fg') {
-  const key = `${n}|${diff}|${seed}`;
+// Levels and the daily puzzle use a fixed amount of work (same seed = same puzzle on every phone).
+// Quick play uses a time limit instead (fastest, and nobody needs to share those).
+const FIXED_WORK = { attempts: 80, steps: 1500 };
+function genPuzzle(n, diff, seed, lane = 'fg', fixed = false) {
+  const key = `${n}|${diff}|${seed}|${fixed ? 'w' : 't'}`;
   if (inflight.has(key)) return inflight.get(key);
-  const budget = budgetFor(n);
+  const budget = fixed ? FIXED_WORK : budgetFor(n);
   const w = workers[lane] || workers.fg || workers.bg;
   const pr = w ? new Promise(res => { const id = ++reqId, d = { id, n, diff, seed, budget }; pending[id] = { res, w, d }; w.postMessage(d); })
                : new Promise(res => setTimeout(() => res(E.generate(n, diff, seed, budget)), 30));
@@ -776,7 +814,10 @@ function newGame(p, meta) {
   G = {
     p, meta, n: p.n, N,
     marks: new Uint8Array(N), wrong: new Uint8Array(N),
-    hearts: (settings.hearts || settings.katie) ? 3 : 0, heartsMode: settings.hearts || settings.katie,
+    ghost: !!settings.ghost,
+    // Ghost Mode never has hearts; it overrides Katie Mode (Katie stays switched on but is paused).
+    hearts: (!settings.ghost && (settings.hearts || settings.katie)) ? 3 : 0,
+    heartsMode: !settings.ghost && (settings.hearts || settings.katie),
     hints: 0, reveals: 0, mistakes: 0, elapsed: 0, done: false, undo: [],
   };
   G.ctx = E.makeCtx(p.n, Int8Array.from(p.reg));
@@ -784,13 +825,13 @@ function newGame(p, meta) {
 }
 function saveGame() {
   if (!G) return;
-  store.set('game', { p: G.p, meta: G.meta, marks: Array.from(G.marks), wrong: Array.from(G.wrong), hearts: G.hearts, heartsMode: G.heartsMode, hints: G.hints, reveals: G.reveals, mistakes: G.mistakes, elapsed: G.elapsed, done: G.done });
+  store.set('game', { p: G.p, meta: G.meta, marks: Array.from(G.marks), wrong: Array.from(G.wrong), hearts: G.hearts, heartsMode: G.heartsMode, ghost: G.ghost, checked: G.checked || '', hints: G.hints, reveals: G.reveals, mistakes: G.mistakes, elapsed: G.elapsed, done: G.done });
 }
 function loadGame() {
   const s = store.get('game', null); if (!s || s.done) return null;
   newGame(s.p, s.meta);
   G.marks = Uint8Array.from(s.marks); G.wrong = Uint8Array.from(s.wrong);
-  Object.assign(G, { hearts: s.hearts, heartsMode: s.heartsMode, hints: s.hints, reveals: s.reveals, mistakes: s.mistakes, elapsed: s.elapsed });
+  Object.assign(G, { ghost: !!s.ghost, checked: s.checked || '', hearts: s.hearts, heartsMode: s.heartsMode, hints: s.hints, reveals: s.reveals, mistakes: s.mistakes, elapsed: s.elapsed });
   return G;
 }
 
@@ -799,16 +840,30 @@ const rc = i => [(i / G.n) | 0, i % G.n];
 function conflicts(a, b) { return G.ctx.conf[a * G.N + b] === 1; }
 function catsList() { const l = []; for (let i = 0; i < G.N; i++) if (G.marks[i] === 2) l.push(i); return l; }
 function autoXSet() {
-  const s = new Uint8Array(G.N); if (!settings.autoX) return s;
+  const s = new Uint8Array(G.N); if (!settings.autoX || G.ghost) return s;
   for (const c of catsList()) for (const d of G.ctx.confList[c]) s[d] = 1;
   return s;
 }
 function conflictSet() {
   const s = new Uint8Array(G.N), cats = catsList();
+  if (G.ghost) return s;
   for (let a = 0; a < cats.length; a++) for (let b = a + 1; b < cats.length; b++) if (conflicts(cats[a], cats[b])) { s[cats[a]] = 1; s[cats[b]] = 1; }
   return s;
 }
-const isLockedCat = i => G.marks[i] === 2;
+const isLockedCat = i => !G.ghost && G.marks[i] === 2;
+const limitedHints = () => settings.katie || !!(G && G.ghost);
+// Rule check, independent of the stored answer: n Rys, one per row/column/color, none touching.
+function boardIsValid(cats) {
+  if (cats.length !== G.n) return false;
+  const rows = new Set(), cols = new Set(), regs = new Set();
+  for (const c of cats) { const [r, col] = rc(c); rows.add(r); cols.add(col); regs.add(G.p.reg[c]); }
+  if (rows.size !== G.n || cols.size !== G.n || regs.size !== G.n) return false;
+  for (let a = 0; a < cats.length; a++) for (let b = a + 1; b < cats.length; b++) {
+    const [r1, c1] = rc(cats[a]), [r2, c2] = rc(cats[b]);
+    if (Math.abs(r1 - r2) <= 1 && Math.abs(c1 - c2) <= 1) return false;
+  }
+  return true;
+}
 
 // ---------- rendering ----------
 const board = $('#board');
@@ -872,7 +927,7 @@ function render() {
     if (cells.every(i => blocked[i] || G.wrong[i])) dead.push(u < G.n ? 'row ' + (u + 1) : u < 2 * G.n ? 'column ' + (u - G.n + 1) : colorName(u));
   }
   const de = $('#deadend');
-  if (dead.length && !G.done) { de.textContent = `Dead end: no room left for a Ry in ${dead.join(', ')}. One of your Rys is misplaced — tap Hint to find it.`; de.classList.add('show'); }
+  if (dead.length && !G.done && !G.ghost) { de.textContent = `Dead end: no room left for a Ry in ${dead.join(', ')}. One of your Rys is misplaced — tap Hint to find it.`; de.classList.add('show'); }
   else de.classList.remove('show');
   const cats = catsList().length;
   $('#catCount').innerHTML = `<span class="good">${cats}</span>/${G.n}`;
@@ -910,6 +965,7 @@ function placeCat(i) {
   if (G.heartsMode && G.hearts <= 0) { show('ovLose'); return; }
   clearHint();
   const [r, c] = rc(i);
+  if (G.ghost) { pushUndo(); G.marks[i] = 2; flash(i, 'pop'); buzz(15); afterChange(); return; }
   // Both modes: correct cats lock in, wrong cats become a red X. Hearts mode also costs a heart.
   if (G.p.sol[r] === c) { pushUndo(); G.marks[i] = 2; flash(i, 'pop'); buzz(15); }
   else {
@@ -926,7 +982,21 @@ function afterChange() {
 function checkWin() {
   const cats = catsList();
   if (cats.length !== G.n) return;
-  for (const c of cats) { const [r, col] = rc(c); if (G.p.sol[r] !== col) return; }
+  if (!boardIsValid(cats)) {
+    if (!G.ghost) return;
+    const sig = cats.join(',');
+    if (G.checked === sig) return; // this exact board was already checked
+    G.checked = sig; G.mistakes++;
+    buzz([60, 40, 60]);
+    if (G.heartsMode) {
+      G.hearts--; render(); saveGame();
+      if (G.hearts <= 0) { const r = speedRatio(); $('#loseQuip').textContent = pickQuip(r < 0.25 ? 'failFast' : r > 1.5 ? 'failSlow' : 'fail'); $('#loseContinue').style.display = 'none'; setTimeout(() => show('ovLose'), 400); return; }
+    }
+    saveGame();
+    $('#ghostSub').textContent = G.heartsMode ? `That's not it. ${G.hearts} heart${G.hearts === 1 ? '' : 's'} left.` : `That's not it. Checks used: ${G.mistakes}.`;
+    setTimeout(() => show('ovGhost'), 250);
+    return;
+  }
   G.done = true; saveGame(); stopTimer(); clearHint();
   recordWin();
   buzz([30, 50, 30]);
@@ -1020,14 +1090,14 @@ function buildSolverState() {
 }
 function showHint() {
   if (!G || G.done) return;
-  if (settings.katie && katieHints().n <= 0 && !(G.lastHint && G.lastHint.sig === G.marks.join('') + '|' + G.wrong.join(''))) {
+  if (limitedHints() && katieHints().n <= 0 && !(G.lastHint && G.lastHint.sig === G.marks.join('') + '|' + G.wrong.join(''))) {
     const m = nextHintIn();
     setHint({ cells: [], unitCells: [], text: `No hints left. Next one in ${m} min, or win a puzzle to earn one back.`, apply: null }); return;
   }
   // Same board as the last paid hint? Show it again for free.
   const sig = G.marks.join('') + '|' + G.wrong.join('');
   if (G.lastHint && G.lastHint.sig === sig) { setHint(G.lastHint.h); return; }
-  const give = h => { if (settings.katie) katieSpend(); G.lastHint = { sig, h }; setHint(h); };
+  const give = h => { if (limitedHints()) katieSpend(); G.lastHint = { sig, h }; setHint(h); };
   const b = buildSolverState();
   if (b.badCat != null) { give({ cells: [b.badCat], unitCells: [], text: 'This Ry breaks the solution — it can\'t stay here. Remove it (tap it) to continue.', apply: () => { pushUndo(); G.marks[b.badCat] = 0; } }); return; }
   if (b.badX != null) { give({ cells: [b.badX], unitCells: [], text: 'This X is covering a spot that actually needs a Ry. Clear it.', apply: () => { pushUndo(); G.marks[b.badX] = 0; } }); return; }
@@ -1039,7 +1109,7 @@ function showHint() {
   while (st && !st.contradiction && st.type === 'elim' && st.cells.every(c => auto[c] || G.marks[c] === 1) && guard++ < 200) {
     E.apply(G.ctx, s, st); st = E.findStep(G.ctx, s, 4);
   }
-  if (!st || st.contradiction) { setHint({ cells: [], unitCells: [], text: settings.katie ? 'No further logical step found from here.' : 'No further logical step found from here — try Reveal Ry.', apply: null }); return; }
+  if (!st || st.contradiction) { setHint({ cells: [], unitCells: [], text: limitedHints() ? 'No further logical step found from here.' : 'No further logical step found from here — try Reveal Ry.', apply: null }); return; }
   G.hints++;
   const u = unitName(st.unit);
   let text, unitCells = u.cells.slice();
@@ -1060,7 +1130,7 @@ function showHint() {
   give({ cells, unitCells, text, apply: () => { pushUndo(); if (st.type === 'place') G.marks[cells[0]] = 2; else for (const c of cells) if (G.marks[c] === 0) G.marks[c] = 1; } });
 }
 function revealCat() {
-  if (!G || G.done || settings.katie) return;
+  if (!G || G.done || limitedHints()) return;
   clearHint();
   const free = []; for (let r = 0; r < G.n; r++) { const i = r * G.n + G.p.sol[r]; if (G.marks[i] !== 2) free.push(i); }
   if (!free.length) return;
@@ -1096,7 +1166,7 @@ $('#btnClear').onclick = () => {
 
 // ---------- stats ----------
 function recordWin() {
-  if (settings.katie) katieEarn();
+  if (limitedHints()) katieEarn();
   const st = store.get('stats', { solved: 0, bySize: {}, streakDays: [], perfect: 0 });
   st.solved++;
   if (!G.mistakes && !G.hints && !G.reveals) st.perfect++;
@@ -1104,6 +1174,13 @@ function recordWin() {
   b.solved++; b.total += G.elapsed;
   if (!G.reveals && (b.best == null || G.elapsed < b.best)) b.best = G.elapsed;
   st.bySize[k] = b;
+  if (G.ghost) {
+    const gs = st.ghost || (st.ghost = { solved: 0, firstTry: 0, bySize: {} });
+    gs.solved++; if (!G.mistakes && !G.hints) gs.firstTry++;
+    const gb = gs.bySize[k] || { solved: 0, best: null, total: 0 };
+    gb.solved++; gb.total += G.elapsed; if (gb.best == null || G.elapsed < gb.best) gb.best = G.elapsed;
+    gs.bySize[k] = gb;
+  }
   if (G.meta.type === 'daily') { const d = todayKey(); if (!st.streakDays.includes(d)) st.streakDays.push(d); store.set('dailyDone', d); }
   store.set('stats', st);
   if (G.meta.type === 'level' && G.meta.level === level) { level++; store.set('level', level); store.del('levelCache'); }
@@ -1128,6 +1205,10 @@ function showStats() {
   $('#statsTop').innerHTML = `<div><b>${st.solved}</b><span>Solved</span></div><div><b>${st.perfect}</b><span>Perfect</span></div><div><b>${level - 1}</b><span>Levels</span></div>`;
   const rows = Object.keys(st.bySize).map(Number).sort((a, b) => a - b).map(k => { const b = st.bySize[k]; return `<tr><td>${k}×${k}</td><td>${b.solved}</td><td>${b.best != null ? fmtTime(b.best) : '—'}</td><td>${fmtTime(b.total / b.solved)}</td></tr>`; }).join('');
   $('#statsTable').innerHTML = `<tr><th>Size</th><th>Solved</th><th>Best</th><th>Avg</th></tr>` + (rows || '<tr><td colspan="4">No puzzles solved yet</td></tr>');
+  const gs = st.ghost || { solved: 0, firstTry: 0, bySize: {} };
+  $('#ghostTop').innerHTML = `<div><b>${gs.solved}</b><span>Solved</span></div><div><b>${gs.firstTry}</b><span>First try, no hints</span></div><div><b>${gs.solved ? Math.round(100 * gs.firstTry / gs.solved) + '%' : '—'}</b><span>First-try rate</span></div>`;
+  const grows = Object.keys(gs.bySize).map(Number).sort((a, b) => a - b).map(k => { const b = gs.bySize[k]; return `<tr><td>${k}×${k}</td><td>${b.solved}</td><td>${fmtTime(b.best)}</td><td>${fmtTime(b.total / b.solved)}</td></tr>`; }).join('');
+  $('#ghostTable').innerHTML = `<tr><th>Size</th><th>Solved</th><th>Best</th><th>Avg</th></tr>` + (grows || '<tr><td colspan="4">No Ghost Mode puzzles solved yet</td></tr>');
   show('ovStats');
 }
 
@@ -1164,6 +1245,7 @@ function confetti() {
 
 // ---------- settings UI ----------
 const SETTING_DEFS = [
+  ['ghost', 'Ghost Mode', 'No feedback until the board is full: no right/wrong, no hearts, no auto-X or conflict marks, no Reveal. Limited hints like Katie Mode. Applies from the next puzzle.'],
   ['katie', 'Katie Mode', 'Hearts always on, no relaxed mode, no Reveal, 2 hints that refill one per hour or one per win. Leaving requires the husband code.'],
   ['hearts', 'Hearts', 'A wrong Ry costs a heart; 3 mistakes ends the game. Off = relaxed: wrong Rys still turn into red X\'s, but no hearts are lost.'],
   ['autoX', 'Auto-X', 'Automatically shade cells ruled out by placed Rys.'],
@@ -1173,12 +1255,14 @@ const SETTING_DEFS = [
 function renderSettings() {
   const l = $('#settingsList');
   l.innerHTML = SETTING_DEFS.map(([k, t, s]) => {
-      const locked = settings.katie && k === 'hearts';
-      const on = locked ? true : settings[k];
-      return `<div class="setting"><div><b>${t}</b><small>${locked ? 'Locked on by Katie Mode.' : s}</small></div><button class="toggle ${on ? 'on' : ''}" data-k="${k}" aria-label="${t}" ${locked ? 'disabled' : ''}></button></div>`;
+      let locked = false, on = settings[k], note = s;
+      if (settings.ghost && (k === 'hearts' || k === 'autoX')) { locked = true; on = false; note = 'Off while Ghost Mode is on.'; }
+      else if (settings.katie && k === 'hearts') { locked = true; on = true; note = 'Locked on by Katie Mode.'; }
+      if (settings.ghost && k === 'katie' && settings.katie) note = 'Paused while Ghost Mode is on (Ghost Mode rules apply). Leaving still requires the husband code.';
+      return `<div class="setting"><div><b>${t}</b><small>${note}</small></div><button class="toggle ${on ? 'on' : ''}" data-k="${k}" aria-label="${t}" ${locked ? 'disabled' : ''}></button></div>`;
     }).join('') +
     `<div class="setting"><div><b>Theme</b></div><div class="chips">${['auto', 'light', 'dark'].map(t => `<button class="chip ${settings.theme === t ? 'on' : ''}" data-theme-opt="${t}">${t}</button>`).join('')}</div></div>
-     <div class="setting"><div><b>Version</b><small>Rydoku v10</small></div><button class="chip" id="checkUpd">Check for update</button></div>
+     <div class="setting"><div><b>Version</b><small>Rydoku v13</small></div><button class="chip" id="checkUpd">Check for update</button></div>
      <div class="setting"><div><b>Reset level progress</b><small>Currently on level ${level}.</small></div><button class="chip" id="resetLevel">Reset</button></div>`;
   l.querySelectorAll('.toggle').forEach(b => b.onclick = async () => {
     const k = b.dataset.k;
@@ -1246,8 +1330,9 @@ async function startPuzzle(spec, meta) {
   show('ovLoading');
   let p = null;
   if (meta.type === 'level') { const c = store.get('levelCache', null); if (c && c.level === meta.level) p = c.p; }
-  if (!p) p = await genPuzzle(spec.n, spec.diff, spec.seed, 'fg');
-  if (!p) p = await genPuzzle(spec.n, spec.diff, (spec.seed + 1) >>> 0, 'fg');
+  const fixed = meta.type !== 'quick';
+  if (!p) p = await genPuzzle(spec.n, spec.diff, spec.seed, 'fg', fixed);
+  if (!p) p = await genPuzzle(spec.n, spec.diff, (spec.seed + 1) >>> 0, 'fg', fixed);
   hide('ovLoading');
   if (!p) { await confirmBox('Could not build puzzle', 'Please try again.'); return; }
   if (meta.type === 'level') store.set('levelCache', { level: meta.level, p });
@@ -1267,7 +1352,7 @@ function openGame() {
 const prefetched = {};
 function prefetchLevel(L) {
   if (prefetched[L]) return; const s = levelSpec(L);
-  prefetched[L] = genPuzzle(s.n, s.diff, s.seed, 'bg').then(p => { if (p) store.set('levelNext', { level: L, p }); return p; });
+  prefetched[L] = genPuzzle(s.n, s.diff, s.seed, 'bg', true).then(p => { if (p) store.set('levelNext', { level: L, p }); return p; });
 }
 async function playLevel() {
   const saved = store.get('game', null);
@@ -1303,6 +1388,31 @@ window.addEventListener('pagehide', parkGame);
 setInterval(() => { updateHintBadge(); if ($('#home').classList.contains('active')) refreshHome(); }, 60000);
 
 refreshHome();
+// ---------- What's new (shown once after an update) ----------
+// Player-facing release notes, newest first. Add an entry each time VERSION in build.js is bumped.
+const APP_VERSION = 13;
+const WHATS_NEW = {
+  13: ['New: Ghost Mode (turn it on in Settings). The game stays silent while you play: no right/wrong, no hearts, no auto-X and no conflict marks, so two Rys in the same row look perfectly normal. Tapping a Ry removes it. When the board is full it gets checked; a wrong board just says "Not quite" without telling you what. Hints are limited to 2 (one back per win or per hour) and there\'s no Reveal.',
+       'Ghost Mode always switches off hearts and auto-X, even with Katie Mode on.',
+       'New Ghost Mode section on the Stats screen: puzzles solved, first-try solves, best and average times.',
+       'This "What\'s new" note after each update.'],
+  12: ['Ghost Mode (Settings): no right/wrong feedback until the board is full.'],
+  11: ['Levels and the Daily puzzle are now the same on every phone.'],
+  10: ['The Daily puzzle can be solved once per day, with a countdown to the next one.'],
+};
+function showWhatsNew() {
+  const seen = store.get('seenVersion', null);
+  const returning = store.get('level', null) != null || store.get('stats', null) != null;
+  store.set('seenVersion', APP_VERSION);
+  if (seen == null && !returning) return;               // brand-new player: nothing to announce
+  const from = seen == null ? APP_VERSION - 1 : seen;    // players from before this feature see the latest notes
+  const vs = Object.keys(WHATS_NEW).map(Number).filter(v => v > from && v <= APP_VERSION).sort((a, b) => b - a).slice(0, 4);
+  if (!vs.length) return;
+  $('#newList').innerHTML = vs.map(v => `<h4>Version ${v}</h4><ul>${WHATS_NEW[v].map(t => `<li>${t}</li>`).join('')}</ul>`).join('');
+  $$('#ovNew .catmini').forEach(i => i.src = FACE);
+  show('ovNew');
+}
+if (typeof APP_VERSION === 'number') setTimeout(showWhatsNew, 400);
 $('#btnResume').onclick = () => { if (loadGame()) openGame(); };
 prefetchLevel(level);
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
