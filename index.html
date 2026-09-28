@@ -1052,9 +1052,12 @@ board.addEventListener('contextmenu', e => e.preventDefault());
 function tap(i) {
   const now = Date.now();
   if (lastTap && lastTap.i === i && now - lastTap.t < 330) {
-    // double tap: undo the first tap's toggle, then place cat
+    // double tap: undo the first tap's toggle, then place a Ry.
+    // If the first tap just removed a Ry, keep it removed (a quick second tap is not a request to put it back).
+    const hadRy = lastTap.marks[i] === 2;
+    if (hadRy) { lastTap = null; render(); return; }
     G.marks = lastTap.marks; if (lastTap.pushed) G.undo.pop(); lastTap = null;
-    placeCat(i); return;
+    placeCat(i); render(); return;
   }
   const before = G.marks.slice();
   if (isLockedCat(i) || G.wrong[i]) { lastTap = { i, t: now, marks: before, pushed: false }; return; }
@@ -1262,7 +1265,7 @@ function renderSettings() {
       return `<div class="setting"><div><b>${t}</b><small>${note}</small></div><button class="toggle ${on ? 'on' : ''}" data-k="${k}" aria-label="${t}" ${locked ? 'disabled' : ''}></button></div>`;
     }).join('') +
     `<div class="setting"><div><b>Theme</b></div><div class="chips">${['auto', 'light', 'dark'].map(t => `<button class="chip ${settings.theme === t ? 'on' : ''}" data-theme-opt="${t}">${t}</button>`).join('')}</div></div>
-     <div class="setting"><div><b>Version</b><small>Rydoku v13</small></div><button class="chip" id="checkUpd">Check for update</button></div>
+     <div class="setting"><div><b>Version</b><small>Rydoku v14</small></div><button class="chip" id="checkUpd">Check for update</button></div>
      <div class="setting"><div><b>Reset level progress</b><small>Currently on level ${level}.</small></div><button class="chip" id="resetLevel">Reset</button></div>`;
   l.querySelectorAll('.toggle').forEach(b => b.onclick = async () => {
     const k = b.dataset.k;
@@ -1390,8 +1393,9 @@ setInterval(() => { updateHintBadge(); if ($('#home').classList.contains('active
 refreshHome();
 // ---------- What's new (shown once after an update) ----------
 // Player-facing release notes, newest first. Add an entry each time VERSION in build.js is bumped.
-const APP_VERSION = 13;
+const APP_VERSION = 14;
 const WHATS_NEW = {
+  14: ['Fixed: in Ghost Mode, a Ry you removed could reappear later when you tapped somewhere else.'],
   13: ['New: Ghost Mode (turn it on in Settings). The game stays silent while you play: no right/wrong, no hearts, no auto-X and no conflict marks, so two Rys in the same row look perfectly normal. Tapping a Ry removes it. When the board is full it gets checked; a wrong board just says "Not quite" without telling you what. Hints are limited to 2 (one back per win or per hour) and there\'s no Reveal.',
        'Ghost Mode always switches off hearts and auto-X, even with Katie Mode on.',
        'New Ghost Mode section on the Stats screen: puzzles solved, first-try solves, best and average times.',
